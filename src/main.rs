@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use bevy::prelude::{Commands, *};
+use bevy::{
+    prelude::{Commands, *},
+    window::WindowResized,
+};
 use bevy_prototype_lyon::{entity::ShapeBundle, prelude::*};
 
 #[derive(Component, Debug)]
@@ -166,14 +169,14 @@ fn solve_collision(p1: &mut Point, p2: &mut Point) {
     p2.y -= 0.5 * delta * n_y * FRICTION;
 }
 
-const GRAVITY: f32 = -9.80;
+const GRAVITY: f32 = -100.0;
 const FRICTION: f32 = 0.99;
-const BOUNCE: f32 = 0.95;
+const BOUNCE: f32 = 0.99;
 const SUBSTEPS: u8 = 8;
 
 const GAME_SCALE: f32 = 20.0;
 
-fn create_sprite(radius: f32, color: Color) -> ShapeBundle {
+fn create_sprite(radius: f32, id: i32) -> ShapeBundle {
     let shape = shapes::RegularPolygon {
         sides: 24,
         feature: shapes::RegularPolygonFeature::Radius(radius),
@@ -183,11 +186,16 @@ fn create_sprite(radius: f32, color: Color) -> ShapeBundle {
     GeometryBuilder::build_as(
         &shape,
         DrawMode::Outlined {
-            fill_mode: FillMode::color(color),
+            fill_mode: FillMode::color(Color::Rgba {
+                alpha: 1.0,
+                blue: id as f32 / 255.0,
+                green: (id + id) as f32 / 255.0,
+                red: (id + id + id) as f32 / 255.0,
+            }),
             outline_mode: StrokeMode::new(Color::BLACK, 0.2),
         },
         Transform {
-            translation: Vec3::ZERO,
+            translation: Vec3::new(100_100.0, 100_100.0, 100_100.0),
             scale: Vec3::new(GAME_SCALE, GAME_SCALE, GAME_SCALE),
             ..default()
         },
@@ -195,26 +203,22 @@ fn create_sprite(radius: f32, color: Color) -> ShapeBundle {
 }
 
 fn add_points(mut commands: Commands) {
-    commands.spawn((
-        create_sprite(1.0, Color::BLUE),
-        Point::new(0, 5.0, 20.0, 0.1, 0.0),
-    ));
+    commands.spawn((create_sprite(1.0, 0), Point::new(0, 5.0, 20.0, 0.1, 0.0)));
 }
 
 fn update_points_system(mut query: Query<&mut Point>, time: Res<Time>, bounds: Res<Bounds>) {
-    for mut point in query.iter_mut() {
-        let sub_dt = time.delta_seconds() / (SUBSTEPS as f32);
-        println!("Sub {:?}", sub_dt);
-        for _ in 0..SUBSTEPS {
+    let sub_dt = time.delta_seconds() / (SUBSTEPS as f32);
+    for _ in 0..SUBSTEPS {
+        for mut point in query.iter_mut() {
             point.apply_acceleration(0.0, GRAVITY);
             point.move_point(&bounds, sub_dt);
         }
-    }
 
-    let mut i = query.iter_combinations_mut();
-    while let Some([mut p1, mut p2]) = i.fetch_next() {
-        if p1.colliding(p2.as_ref()) {
-            solve_collision(p1.as_mut(), p2.as_mut());
+        let mut i = query.iter_combinations_mut();
+        while let Some([mut p1, mut p2]) = i.fetch_next() {
+            if p1.colliding(p2.as_ref()) {
+                solve_collision(p1.as_mut(), p2.as_mut());
+            }
         }
     }
 }
@@ -240,21 +244,26 @@ fn spawn_item(mut commands: Commands, time: Res<Time>, mut config: ResMut<SpawnT
 
     if config.timer.finished() {
         commands.spawn((
-            create_sprite(1.0, Color::RED),
-            Point::new(config.id, 0.0, 20.0, 0.05, 0.0),
+            create_sprite(1.0, config.id),
+            Point::new(config.id, 0.0, 20.0, 0.1, 0.02),
         ));
         config.id += 1;
     }
 }
 
+fn set_bounds(mut bounds: ResMut<Bounds>, window_resize: Res<Events<WindowResized>>) {
+    let mut reader = window_resize.get_reader();
+    for e in reader.iter(&window_resize) {}
+}
+
 fn main() {
-    let bounds = Bounds::new(0, 0, 21, 50);
+    let bounds = Bounds::new(-40, -12, 40, 40);
 
     App::new()
         .insert_resource(Msaa { samples: 4 })
         .insert_resource(bounds)
         .insert_resource(SpawnTimer {
-            timer: Timer::new(Duration::from_secs(5), TimerMode::Repeating),
+            timer: Timer::new(Duration::from_millis(500), TimerMode::Repeating),
             id: 10,
         })
         .add_plugins(DefaultPlugins)
